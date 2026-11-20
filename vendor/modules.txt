@@ -87,6 +87,12 @@ github.com/gdamore/tcell/v2/terminfo/x/xterm_kitty
 ## explicit
 github.com/go-sourcemap/sourcemap
 github.com/go-sourcemap/sourcemap/internal/base64vlq
+# github.com/golang-auth/go-gssapi-c v0.1.4
+## explicit; go 1.24
+github.com/golang-auth/go-gssapi-c
+# github.com/golang-auth/go-gssapi/v3 v3.0.2-beta7
+## explicit; go 1.24
+github.com/golang-auth/go-gssapi/v3
 # github.com/google/pprof v0.0.0-20251007162407-5df77e3f7d1d
 ## explicit; go 1.24.0
 github.com/google/pprof/profile

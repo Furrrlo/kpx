@@ -32,6 +32,8 @@ require (
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
+	github.com/golang-auth/go-gssapi-c v0.1.4 // indirect
+	github.com/golang-auth/go-gssapi/v3 v3.0.2-beta7 // indirect
 	github.com/google/pprof v0.0.0-20251007162407-5df77e3f7d1d // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect

@@ -1,11 +1,12 @@
-//go:build !windows && !linux
+//go:build !windows && !linux && !darwin
 
 package kpx
 
 import (
 	"errors"
-	"github.com/jcmturner/gokrb5/v8/config"
 	"sync"
+
+	"github.com/jcmturner/gokrb5/v8/config"
 )
 
 var NativeKerberos = &NoKerberos{}
