@@ -71,10 +71,6 @@ func (k *DarwinKerberos) SafeGetToken(
 	}
 	defer cred.Release()
 
-	logInfo("host=%s", host)
-	logInfo("cname=%s", cname)
-	logInfo("spn=%s", spn)
-
 	ctx, err := gss.InitSecContext(
 		target,
 		gssapi.WithInitiatorCredential(cred))
