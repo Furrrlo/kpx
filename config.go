@@ -796,83 +796,85 @@ func (c *Config) resolve(url, host string, rule *ConfRule) []*ConfProxy {
 	if *proxy.Type != ProxyPac {
 		return c.allProxies(rule)
 	}
-	pacResult := c.resolvePac(url, host, proxy)
-	switch {
-	case pacResult.isDirect:
-		// return continue to continue scanning rules
-		// if no more rules then this will be transformed into a DIRECT (see match)
-		return []*ConfProxy{&ConfProxyContinue}
-	case pacResult.isSocks, pacResult.isProxy:
-		// lookup hostPort in existing proxies (host/port and pac), if found use it, otherwise create a new one
-		var pacProxies []*ConfProxy
-		for _, confProxy := range c.conf.pacProxies {
-			//if confProxy.Host != nil {
-			//	if *confProxy.Host+":"+strconv.Itoa(confProxy.Port) == pacResult.hostPort {
-			//		return confProxy
-			//	}
-			//}
-			var found *ConfProxy
-			if strings.Contains(confProxy.pacRegex.regex, ":") {
-				if confProxy.pacRegex.pattern.MatchString(pacResult.hostPort) {
-					found = confProxy
-				}
-			} else if confProxy.pacRegex != nil {
-				if confProxy.pacRegex.pattern.MatchString(pacResult.hostOnly) {
-					found = confProxy
-				}
-			}
-			if found != nil {
-				if *found.Host == "*" {
-					name := *found.name + ">" + pacResult.hostPort
-					// copy only necessary fields
-					found = &ConfProxy{
-						name:       &name,
-						Type:       found.Type,
-						typeValue:  found.typeValue,
-						Host:       &pacResult.hostOnly,
-						Port:       pacResult.portOnly,
-						Verbose:    found.Verbose,
-						Ssl:        found.Ssl,
-						Spn:        found.Spn,
-						Realm:      found.Realm,
-						Credential: found.Credential,
-						cred:       found.cred,
+
+	pacResults := c.resolvePac(url, host, proxy)
+	proxies := make([]*ConfProxy, 0, len(pacResults))
+	for _, pacResult := range pacResults {
+		switch {
+		case pacResult.isDirect:
+			// return continue to continue scanning rules
+			// if no more rules then this will be transformed into a DIRECT (see match)
+			proxies = append(proxies, &ConfProxyContinue)
+		case pacResult.isSocks, pacResult.isProxy:
+			// lookup hostPort in existing proxies (host/port and pac), if found use it, otherwise create a new one
+			var pacProxies []*ConfProxy
+			for _, confProxy := range c.conf.pacProxies {
+				//if confProxy.Host != nil {
+				//	if *confProxy.Host+":"+strconv.Itoa(confProxy.Port) == pacResult.hostPort {
+				//		return confProxy
+				//	}
+				//}
+				var found *ConfProxy
+				if strings.Contains(confProxy.pacRegex.regex, ":") {
+					if confProxy.pacRegex.pattern.MatchString(pacResult.hostPort) {
+						found = confProxy
+					}
+				} else if confProxy.pacRegex != nil {
+					if confProxy.pacRegex.pattern.MatchString(pacResult.hostOnly) {
+						found = confProxy
 					}
 				}
-				pacProxies = append(pacProxies, found)
+				if found != nil {
+					if *found.Host == "*" {
+						name := *found.name + ">" + pacResult.hostPort
+						// copy only necessary fields
+						found = &ConfProxy{
+							name:       &name,
+							Type:       found.Type,
+							typeValue:  found.typeValue,
+							Host:       &pacResult.hostOnly,
+							Port:       pacResult.portOnly,
+							Verbose:    found.Verbose,
+							Ssl:        found.Ssl,
+							Spn:        found.Spn,
+							Realm:      found.Realm,
+							Credential: found.Credential,
+							cred:       found.cred,
+						}
+					}
+					pacProxies = append(pacProxies, found)
+				}
+			}
+
+			if pacProxies != nil {
+				proxies = append(proxies, pacProxies...)
+			} else {
+				// otherwise create a temporary proxy
+				proxyName := pacResult.proxy
+				proxyType := ProxyAnonymous
+				if pacResult.isSocks {
+					proxyType = ProxySocks
+				}
+				host, p := splitHostPort(pacResult.hostPort, "127.0.0.1", "8080", false)
+				port, _ := strconv.Atoi(p)
+				proxies = append(proxies, &ConfProxy{
+					name:      &proxyName,
+					Type:      &proxyType,
+					typeValue: proxyType.Value(),
+					Host:      &host,
+					Port:      port,
+					Verbose:   rule.Verbose,
+				})
 			}
 		}
-		if pacProxies != nil {
-			return pacProxies
-		}
-		// otherwise create a temporary proxy
-		proxyName := pacResult.proxy
-		proxyType := ProxyAnonymous
-		if pacResult.isSocks {
-			proxyType = ProxySocks
-		}
-		host, p := splitHostPort(pacResult.hostPort, "127.0.0.1", "8080", false)
-		port, _ := strconv.Atoi(p)
-		return []*ConfProxy{{
-			name:      &proxyName,
-			Type:      &proxyType,
-			typeValue: proxyType.Value(),
-			Host:      &host,
-			Port:      port,
-			Verbose:   rule.Verbose,
-		}}
 	}
-	if pacResult.isDirect {
-		return []*ConfProxy{&ConfProxyContinue}
-	}
-
-	return []*ConfProxy{proxy}
+	return proxies
 }
 
-func (c *Config) resolvePac(url, host string, proxy *ConfProxy) *PacResult {
+func (c *Config) resolvePac(url, host string, proxy *ConfProxy) []*PacResult {
 	pac := proxy.pacRuntime
 	if pac == nil {
-		return &PacResult{
+		return []*PacResult{{
 			proxy:    ProxyNone.Name(),
 			isDirect: false,
 			isProxy:  false,
@@ -880,31 +882,37 @@ func (c *Config) resolvePac(url, host string, proxy *ConfProxy) *PacResult {
 			hostPort: "",
 			hostOnly: "",
 			portOnly: 0,
+		}}
+	}
+
+	proxiesStr, _ := pac.Run(url, host)
+	splitProxies := strings.Split(strings.TrimSpace(proxiesStr), ";")
+	proxies := make([]*PacResult, 0, len(splitProxies))
+	for _, proxy := range splitProxies {
+		proxy = strings.TrimSpace(proxy)
+		split := strings.SplitN(proxy+" ", " ", 2)
+		pType := split[0]
+		pHostPort := ""
+		if len(split) > 1 {
+			pHostPort = strings.TrimSpace(split[1])
 		}
+		split = strings.Split(pHostPort, ":")
+		pHostOnly := split[0]
+		pPortOnly := 8080
+		if len(split) > 1 {
+			pPortOnly, _ = strconv.Atoi(split[1])
+		}
+		proxies = append(proxies, &PacResult{
+			proxy:    proxy,
+			isDirect: pType == "DIRECT",
+			isProxy:  pType == "PROXY" || pType == "HTTP" || pType == "HTTPS",
+			isSocks:  pType == "SOCKS" || pType == "SOCKS4" || pType == "SOCKS5",
+			hostPort: pHostPort,
+			hostOnly: pHostOnly,
+			portOnly: pPortOnly,
+		})
 	}
-	proxies, _ := pac.Run(url, host)
-	firstProxy := strings.TrimSpace(strings.Split(strings.TrimSpace(proxies), ";")[0])
-	split := strings.SplitN(firstProxy+" ", " ", 2)
-	pType := split[0]
-	pHostPort := ""
-	if len(split) > 1 {
-		pHostPort = strings.TrimSpace(split[1])
-	}
-	split = strings.Split(pHostPort, ":")
-	pHostOnly := split[0]
-	pPortOnly := 8080
-	if len(split) > 1 {
-		pPortOnly, _ = strconv.Atoi(split[1])
-	}
-	return &PacResult{
-		proxy:    firstProxy,
-		isDirect: pType == "DIRECT",
-		isProxy:  pType == "PROXY" || pType == "HTTP" || pType == "HTTPS",
-		isSocks:  pType == "SOCKS" || pType == "SOCKS4" || pType == "SOCKS5",
-		hostPort: pHostPort,
-		hostOnly: pHostOnly,
-		portOnly: pPortOnly,
-	}
+	return proxies
 }
 
 func (c *Config) allProxies(rule *ConfRule) []*ConfProxy {
